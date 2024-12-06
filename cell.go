@@ -1,5 +1,7 @@
 package main
 
+import "sync"
+
 type InputCell[T any] interface {
 	Value() T
 	Subscribe(ch chan T)
@@ -34,6 +36,7 @@ func MakeComputeCell2[T any](input1 *Cell[T], input2 *Cell[T], f func(a T, b T) 
 func MakeComputeCell[T any](inputs []*Cell[T], f func(inputs []T) T) ComputeCell[T] {
 	channels := make([]chan T, len(inputs))
 	values := make([]T, len(inputs))
+	mu := sync.Mutex{}
 	for i, input := range inputs {
 		values[i] = input.Value()
 		channels[i] = make(chan T)
@@ -45,9 +48,12 @@ func MakeComputeCell[T any](inputs []*Cell[T], f func(inputs []T) T) ComputeCell
 	}
 	for i, input := range inputs {
 		go func(input *Cell[T], position int) {
-			for newValue := range channels[position] {
+			for {
+				newValue := <-channels[position]
+				mu.Lock()
 				values[position] = newValue
-				go cell.Update(f(values))
+				mu.Unlock()
+				cell.Update(f(values))
 			}
 		}(input, i)
 	}
